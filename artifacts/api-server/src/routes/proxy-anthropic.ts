@@ -334,7 +334,7 @@ export async function handleAnthropicNonStream(
     throw err;
   }
 
-  const response = JSON.parse(responseText) as {
+  let response: {
     id: string;
     content: Array<{
       type: string;
@@ -347,6 +347,16 @@ export async function handleAnthropicNonStream(
     usage: { input_tokens: number; output_tokens: number };
     stop_reason?: string;
   };
+  try {
+    response = JSON.parse(responseText);
+  } catch {
+    const preview = responseText.slice(0, 200);
+    const err = new Error(
+      `上游 Anthropic 返回了非 JSON 响应（前 200 字节）：${preview}`,
+    ) as Error & { status?: number };
+    err.status = 502;
+    throw err;
+  }
 
   const inputTokens = response.usage.input_tokens;
   const outputTokens = response.usage.output_tokens;

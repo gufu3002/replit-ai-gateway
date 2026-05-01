@@ -64,6 +64,7 @@ export default function LogsPage({ adminKey, setAdminKey, baseUrl, externalSearc
   const [logConnected, setLogConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const isRefreshingRef = useRef(false);
   const [logFilter, setLogFilter] = useState<string>("all");
   const [searchText, setSearchText] = useState("");
@@ -89,6 +90,7 @@ export default function LogsPage({ adminKey, setAdminKey, baseUrl, externalSearc
     setIsConnecting(false);
     isRefreshingRef.current = false;
     setIsRefreshing(false);
+    setAuthError(null);
   }, []);
 
   const fetchLogs = useCallback(async (sinceIndex?: number) => {
@@ -101,19 +103,34 @@ export default function LogsPage({ adminKey, setAdminKey, baseUrl, externalSearc
         headers: { Authorization: `Bearer ${key}` },
         cache: "no-store",
       });
-      if (!res.ok) throw new Error("fetch failed");
+      if (res.status === 401 || res.status === 403) {
+        // Auth failure: stop polling and surface the error
+        activeRef.current = false;
+        if (pollTimerRef.current) {
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        setLogConnected(false);
+        setIsConnecting(false);
+        setAuthError("密钥无效或已过期，请重新输入正确的 Admin Key");
+        return;
+      }
+      if (!res.ok) throw new Error(`服务器错误 ${res.status}`);
+      setAuthError(null);
       const json = await res.json() as { logs: LogEntry[]; total: number };
       nextIndexRef.current = json.total;
       if (json.logs.length > 0) {
         setLogs((prev) => {
-          const next = [...prev, ...json.logs];
-          if (next.length > 500) return next.slice(-500);
-          return next;
+          const combined = [...prev, ...json.logs];
+          return combined.length > 500 ? combined.slice(-500) : combined;
         });
       }
       setLogConnected(true);
-    } catch {
-      // ignore; interval will retry
+    } catch (err) {
+      // Network errors: log for debugging but let the interval retry
+      if (err instanceof Error && err.name !== "AbortError") {
+        console.warn("[LogsPage] fetchLogs error:", err.message);
+      }
     }
   }, []);
 
@@ -332,6 +349,20 @@ export default function LogsPage({ adminKey, setAdminKey, baseUrl, externalSearc
             </button>
           </div>
         </div>
+
+        {/* ── Auth error banner ── */}
+        {authError && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: "8px",
+            background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.28)",
+            borderRadius: "8px", padding: "8px 14px", marginBottom: "10px",
+            color: "#fca5a5", fontSize: "14px",
+          }}>
+            <span style={{ fontSize: "16px", flexShrink: 0 }}>⚠</span>
+            <span style={{ flex: 1 }}>{authError}</span>
+            <button onClick={() => setAuthError(null)} style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: "16px", padding: "0 2px", lineHeight: 1 }}>×</button>
+          </div>
+        )}
 
         {/* ── Level filters + autoscroll ── */}
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>

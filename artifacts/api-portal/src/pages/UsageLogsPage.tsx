@@ -88,6 +88,7 @@ export default function UsageLogsPage({
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowRefsMap = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const modelDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replayAbortRef = useRef<AbortController | null>(null);
 
   const { models: liveOpenRouterModels } = useLiveOpenRouterModels(baseUrl);
   const allModelsWithLive = useMemo(() => {
@@ -259,15 +260,16 @@ export default function UsageLogsPage({
   };
 
   function getReplayUrl(entry: UsageEntry): string {
+    const model = encodeURIComponent(entry.model);
     switch (entry.endpoint) {
       case "chat/completions":
         return `${baseUrl}/v1/chat/completions`;
       case "claude-messages":
         return `${baseUrl}/v1/messages`;
       case "gemini-generate":
-        return `${baseUrl}/v1beta/models/${entry.model}:generateContent`;
+        return `${baseUrl}/v1beta/models/${model}:generateContent`;
       case "gemini-stream":
-        return `${baseUrl}/v1beta/models/${entry.model}:streamGenerateContent`;
+        return `${baseUrl}/v1beta/models/${model}:streamGenerateContent`;
       case "responses":
         return `${baseUrl}/v1/responses`;
       default:
@@ -281,8 +283,11 @@ export default function UsageLogsPage({
     try {
       const res = await fetch(`${baseUrl}/api/usage-logs/${entry.id}`, {
         headers: key ? { Authorization: `Bearer ${key}` } : {},
+        signal: AbortSignal.timeout(8000),
       });
-      if (res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        console.warn("[UsageLogsPage] Replay fetch auth error:", res.status);
+      } else if (res.ok) {
         const data = (await res.json()) as UsageEntry & {
           requestBody?: Record<string, unknown>;
         };
@@ -291,7 +296,11 @@ export default function UsageLogsPage({
           bodyText = JSON.stringify(sanitized, null, 2);
         }
       }
-    } catch {}
+    } catch (err) {
+      if (err instanceof Error && err.name !== "AbortError") {
+        console.warn("[UsageLogsPage] openReplay error:", err.message);
+      }
+    }
     if (!bodyText) {
       bodyText = JSON.stringify(
         {
@@ -319,11 +328,11 @@ export default function UsageLogsPage({
     body: Record<string, unknown>,
     key: string,
     method = "POST",
+    signal?: AbortSignal,
   ): Promise<ReplayResult> {
     const start = Date.now();
     const reqHeaders: Record<string, string> = {
       "Content-Type": "application/json",
-      "X-Gateway-Debug-Headers": "1",
       ...(key ? { Authorization: `Bearer ${key}` } : {}),
     };
     try {
@@ -331,7 +340,7 @@ export default function UsageLogsPage({
         method,
         headers: reqHeaders,
         body: JSON.stringify({ ...body, stream: false }),
-        signal: AbortSignal.timeout(120000),
+        signal: signal ?? AbortSignal.timeout(60000),
       });
       const duration = Date.now() - start;
       const text = await res.text();
@@ -379,19 +388,48 @@ export default function UsageLogsPage({
   }
 
   function getCompareUrl(entry: UsageEntry, compareModel: string): string {
+    const model = encodeURIComponent(compareModel);
     switch (entry.endpoint) {
       case "claude-messages":
         return `${baseUrl}/v1/messages`;
       case "gemini-generate":
-        return `${baseUrl}/v1beta/models/${compareModel}:generateContent`;
+        return `${baseUrl}/v1beta/models/${model}:generateContent`;
       case "gemini-stream":
-        return `${baseUrl}/v1beta/models/${compareModel}:streamGenerateContent`;
+        return `${baseUrl}/v1beta/models/${model}:streamGenerateContent`;
       case "responses":
         return `${baseUrl}/v1/responses`;
       default:
         return `${baseUrl}/v1/chat/completions`;
     }
   }
+
+  const cancelReplay = () => {
+    if (replayAbortRef.current) {
+      replayAbortRef.current.abort();
+      replayAbortRef.current = null;
+    }
+    setReplay((r) =>
+      r
+        ? {
+            ...r,
+            primary: r.primary.loading
+              ? { ...emptyResult(), error: "已取消" }
+              : r.primary,
+            secondary: r.secondary.loading
+              ? { ...emptyResult(), error: "已取消" }
+              : r.secondary,
+          }
+        : null,
+    );
+  };
+
+  const closeReplay = () => {
+    if (replayAbortRef.current) {
+      replayAbortRef.current.abort();
+      replayAbortRef.current = null;
+    }
+    setReplay(null);
+  };
 
   const executeReplay = async () => {
     if (!replay) return;
@@ -445,10 +483,19 @@ export default function UsageLogsPage({
         : null,
     );
 
-    const tasks = [sendOneRequest(primaryUrl, primaryBody, key)];
+    // Create a fresh AbortController so the user can cancel in-flight requests.
+    const abortController = new AbortController();
+    replayAbortRef.current = abortController;
+
+    const tasks = [sendOneRequest(primaryUrl, primaryBody, key, "POST", abortController.signal)];
     if (secondaryBody && secondaryUrl)
-      tasks.push(sendOneRequest(secondaryUrl, secondaryBody, key));
+      tasks.push(sendOneRequest(secondaryUrl, secondaryBody, key, "POST", abortController.signal));
     const [primaryResult, secondaryResult] = await Promise.all(tasks);
+
+    // Clear the controller reference once requests complete.
+    if (replayAbortRef.current === abortController) {
+      replayAbortRef.current = null;
+    }
 
     setReplay((r) =>
       r
@@ -1544,7 +1591,7 @@ export default function UsageLogsPage({
                 overflowY: "auto",
               }}
               onClick={(e) => {
-                if (e.target === e.currentTarget) setReplay(null);
+                if (e.target === e.currentTarget) closeReplay();
               }}
             >
               <div
@@ -1625,7 +1672,7 @@ export default function UsageLogsPage({
                     </span>
                   </div>
                   <button
-                    onClick={() => setReplay(null)}
+                    onClick={() => closeReplay()}
                     style={{
                       background: "none",
                       border: "none",
@@ -1876,7 +1923,7 @@ export default function UsageLogsPage({
                     </button>
                     <button
                       onClick={() => {
-                        setReplay(null);
+                        closeReplay();
                         jumpToLogs(replay.entry.id);
                       }}
                       style={{
@@ -1949,6 +1996,24 @@ export default function UsageLogsPage({
                         "▶ 执行重放"
                       )}
                     </button>
+                    {isRunning && (
+                      <button
+                        onClick={cancelReplay}
+                        style={{
+                          padding: "7px 14px",
+                          borderRadius: "8px",
+                          border: "1px solid rgba(239,68,68,0.35)",
+                          background: "rgba(239,68,68,0.12)",
+                          color: "#f87171",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        ✕ 取消
+                      </button>
+                    )}
                   </div>
                 </div>
 

@@ -21,24 +21,69 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 app.set("etag", false);
+// Trust the first hop (Replit's internal reverse proxy) so that req.ip and
+// X-Forwarded-For are resolved correctly. Without this, req.ip is always the
+// internal proxy IP, making per-IP rate limiting ineffective.
+app.set("trust proxy", 1);
 
 import { getConfig, updateConfig, type SettingsConfig } from "./config";
 
 // ---------------------------------------------------------------------------
-// Security headers (helmet) — applied to every response
+// Security headers (helmet)
 // ---------------------------------------------------------------------------
 app.use(
   helmet({
     crossOriginResourcePolicy: false,
-    contentSecurityPolicy: false,
+    // API server only returns JSON — no inline scripts, no frames, no resources.
+    // default-src 'none' enforces a strict deny-all policy that covers the rare
+    // case where a browser is directed to this origin directly.
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
   }),
 );
 
 // ---------------------------------------------------------------------------
-// Rate limiting
+// CORS — open to all origins (intended for API proxy use from any client).
+// Explicit method/header allow-lists and no credentials forwarding.
+// ---------------------------------------------------------------------------
+app.use(
+  cors({
+    origin: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-api-key",
+      "x-goog-api-key",
+      "anthropic-version",
+      "anthropic-beta",
+    ],
+    exposedHeaders: [
+      "x-request-id",
+      "x-ratelimit-limit-requests",
+      "x-ratelimit-remaining-requests",
+      "x-ratelimit-reset-requests",
+      "retry-after",
+      "ratelimit-limit",
+      "ratelimit-remaining",
+      "ratelimit-reset",
+    ],
+    credentials: false,
+    maxAge: 86400,
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Rate limiting — always active regardless of key configuration
 // ---------------------------------------------------------------------------
 
-// Admin / key-management endpoints: very strict to mitigate brute-force
+// Admin / key-management endpoints: very strict to mitigate brute-force.
+// skip removed: limits apply even when no key is configured, to prevent
+// enumeration and denial-of-service against the config endpoint.
 const adminRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
@@ -51,10 +96,10 @@ const adminRateLimit = rateLimit({
       code: "rate_limit_exceeded",
     },
   },
-  skip: (_req) => { const c = getConfig(); return !c.proxyApiKey && !c.adminKey; },
 });
 
-// AI proxy endpoints: generous limit to allow normal usage but block abuse
+// AI proxy endpoints: generous limit to allow normal usage but block abuse.
+// skip removed: always enforce to protect upstream quota.
 const proxyRateLimit = rateLimit({
   windowMs: 60 * 1000,
   limit: 300,
@@ -67,7 +112,6 @@ const proxyRateLimit = rateLimit({
       code: "rate_limit_exceeded",
     },
   },
-  skip: (_req) => !getConfig().proxyApiKey,
 });
 
 app.use("/api/config", adminRateLimit);
@@ -119,7 +163,6 @@ app.use(
     },
   }),
 );
-app.use(cors());
 app.use(
   express.json({
     limit: "256mb",
@@ -130,6 +173,12 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true, limit: "256mb" }));
 
+// ---------------------------------------------------------------------------
+// URL auto-correction middleware
+// Guard: reject excessively long paths before running regex to prevent ReDoS.
+// ---------------------------------------------------------------------------
+const URL_CORRECTION_MAX_PATH_LENGTH = 2048;
+
 function urlCorrectionMiddleware(
   req: Request,
   _res: Response,
@@ -137,6 +186,12 @@ function urlCorrectionMiddleware(
 ): void {
   const uac = getConfig().settings.urlAutoCorrect;
   if (!uac.global) {
+    next();
+    return;
+  }
+
+  // ReDoS guard: skip correction for abnormally long paths
+  if (req.path.length > URL_CORRECTION_MAX_PATH_LENGTH) {
     next();
     return;
   }
@@ -357,10 +412,6 @@ app.use((req, res) => {
     );
   }
 
-  const knownDomain = (process.env["REPLIT_DOMAINS"] ?? "")
-    .split(",")[0]
-    .trim();
-  const portalUrl = knownDomain ? `https://${knownDomain}` : undefined;
   res.status(404).json({
     error: {
       message: `Not Found: ${method} ${path}`,
@@ -369,7 +420,6 @@ app.use((req, res) => {
       hint: hints.join(" "),
       url_auto_correct: uacEnabled,
       valid_endpoints: validEndpoints,
-      ...(portalUrl ? { docs: portalUrl } : {}),
     },
   });
 });

@@ -1,5 +1,7 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
+import { z } from "zod";
 import { logger } from "./lib/logger";
 
 export interface ProviderConfig {
@@ -22,7 +24,7 @@ export interface SettingsConfig {
 export interface AppConfig {
   proxyApiKey: string;
   adminKey: string;
-  budgetQuotaUsd: number;   // session spend limit in USD; warn at 80%, hard-alert at 100%
+  budgetQuotaUsd: number;
   providers: {
     openai: ProviderConfig;
     anthropic: ProviderConfig;
@@ -43,39 +45,55 @@ export interface AppConfig {
   settings: SettingsConfig;
 }
 
-const DEFAULT_CONFIG: AppConfig = {
-  proxyApiKey: "",
-  adminKey: "",
-  budgetQuotaUsd: 10.0,
-  providers: {
-    openai:      { baseUrl: "", apiKey: "" },
-    anthropic:   { baseUrl: "", apiKey: "" },
-    gemini:      { baseUrl: "", apiKey: "" },
-    openrouter:  { baseUrl: "", apiKey: "" },
-    deepseek:    { baseUrl: "", apiKey: "" },
-    xai:         { baseUrl: "", apiKey: "" },
-    mistral:     { baseUrl: "", apiKey: "" },
-    moonshot:    { baseUrl: "", apiKey: "" },
-    groq:        { baseUrl: "", apiKey: "" },
-    together:    { baseUrl: "", apiKey: "" },
-    siliconflow: { baseUrl: "", apiKey: "" },
-    cerebras:    { baseUrl: "", apiKey: "" },
-    fireworks:   { baseUrl: "", apiKey: "" },
-    novita:      { baseUrl: "", apiKey: "" },
-    hyperbolic:  { baseUrl: "", apiKey: "" },
-  },
-  settings: {
-    urlAutoCorrect: {
-      chatCompletions: true,
-      messages: true,
-      models: true,
-      geminiGenerate: true,
-      geminiStream: true,
-      global: true,
-    },
-    disguisePreset: "auto",
-  },
-};
+// ---------------------------------------------------------------------------
+// Zod schema — validates .proxy-config.json at load time, preventing tampered
+// or malformed files from causing runtime errors or bypassing length checks.
+// ---------------------------------------------------------------------------
+
+const providerConfigSchema = z.object({
+  baseUrl: z.string().default(""),
+  apiKey: z.string().default(""),
+});
+
+const urlAutoCorrectSchema = z.object({
+  chatCompletions: z.boolean().default(true),
+  messages: z.boolean().default(true),
+  models: z.boolean().default(true),
+  geminiGenerate: z.boolean().default(true),
+  geminiStream: z.boolean().default(true),
+  global: z.boolean().default(true),
+});
+
+const settingsConfigSchema = z.object({
+  urlAutoCorrect: urlAutoCorrectSchema.default({}),
+  disguisePreset: z.string().default("auto"),
+});
+
+const appConfigSchema = z.object({
+  proxyApiKey: z.string().default(""),
+  adminKey: z.string().default(""),
+  budgetQuotaUsd: z.number().nonnegative().max(100_000).default(10.0),
+  providers: z.object({
+    openai:      providerConfigSchema.default({}),
+    anthropic:   providerConfigSchema.default({}),
+    gemini:      providerConfigSchema.default({}),
+    openrouter:  providerConfigSchema.default({}),
+    deepseek:    providerConfigSchema.default({}),
+    xai:         providerConfigSchema.default({}),
+    mistral:     providerConfigSchema.default({}),
+    moonshot:    providerConfigSchema.default({}),
+    groq:        providerConfigSchema.default({}),
+    together:    providerConfigSchema.default({}),
+    siliconflow: providerConfigSchema.default({}),
+    cerebras:    providerConfigSchema.default({}),
+    fireworks:   providerConfigSchema.default({}),
+    novita:      providerConfigSchema.default({}),
+    hyperbolic:  providerConfigSchema.default({}),
+  }).default({}),
+  settings: settingsConfigSchema.default({}),
+});
+
+const DEFAULT_CONFIG: AppConfig = appConfigSchema.parse({});
 
 export { DEFAULT_CONFIG };
 
@@ -119,13 +137,31 @@ function deepMerge(target: AppConfig, source: Partial<AppConfig>): AppConfig {
   return result;
 }
 
+/** Generate a cryptographically random proxy key (24 URL-safe chars ≈ 144 bits). */
+function generateRandomKey(): string {
+  return crypto.randomBytes(18).toString("base64url");
+}
+
 export function loadConfig(): AppConfig {
   if (_config) return _config;
 
   let fileConfig: Partial<AppConfig> = {};
   try {
     if (fs.existsSync(CONFIG_PATH)) {
-      fileConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+      const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+      // Validate with Zod — coerces types and rejects malformed values.
+      const parsed = appConfigSchema.safeParse(raw);
+      if (parsed.success) {
+        fileConfig = parsed.data;
+      } else {
+        logger.warn(
+          { issues: parsed.error.issues },
+          "Config file failed schema validation; falling back to safe defaults for invalid fields",
+        );
+        // Use only fields that passed validation (partial merge with fallback).
+        const partial = appConfigSchema.partial().safeParse(raw);
+        if (partial.success) fileConfig = partial.data as Partial<AppConfig>;
+      }
     }
   } catch { logger.warn("Failed to read config file, using defaults"); }
 
@@ -135,6 +171,22 @@ export function loadConfig(): AppConfig {
   const envKey = process.env[proxyKeyEnv];
   if (envKey && _config.proxyApiKey === DEFAULT_CONFIG.proxyApiKey) {
     _config.proxyApiKey = envKey;
+  }
+
+  // Auto-generate a proxy key on first startup so the gateway is never
+  // deployed in a fully open (no-auth) state by default.
+  if (!_config.proxyApiKey) {
+    const generated = generateRandomKey();
+    _config.proxyApiKey = generated;
+    logger.info(
+      { proxyApiKey: maskKey(generated) },
+      "No Proxy Key configured — generated a random key. Copy it from the Settings page.",
+    );
+    // Persist immediately so the key survives restarts.
+    const configToSave = { ..._config };
+    fs.promises
+      .writeFile(CONFIG_PATH, JSON.stringify(configToSave, null, 2), "utf-8")
+      .catch((err) => logger.error({ err }, "Failed to persist auto-generated proxy key"));
   }
 
   const _ip = "AI_INTEGRATIONS";
@@ -150,9 +202,6 @@ export function loadConfig(): AppConfig {
     if (envBase && !p.baseUrl) p.baseUrl = envBase;
     if (envApiKey && !p.apiKey) p.apiKey = envApiKey;
   }
-  // DeepSeek uses user-provided credentials (no Replit integration).
-  // Its default Base URL is maintained in PROVIDER_DEFAULTS in proxy-raw.ts,
-  // not here, so no default assignment is needed.
 
   return _config;
 }
@@ -240,6 +289,11 @@ export function getPublicConfig(includeDetails = false): object {
     proxyApiKey: maskKey(config.proxyApiKey),
     isDefaultKey: config.proxyApiKey === DEFAULT_CONFIG.proxyApiKey,
     adminKeyConfigured: !!config.adminKey,
+    // Surfaced when no separate Admin Key is configured: the Proxy Key is
+    // currently accepted for admin operations, collapsing the auth boundary.
+    ...(!config.adminKey && config.proxyApiKey
+      ? { adminKeyWarning: "未配置独立 Admin Key，当前 Proxy Key 同时具有管理权限，建议在「系统设置」中配置独立的 Admin Key" }
+      : {}),
     budgetQuotaUsd: config.budgetQuotaUsd,
     providers: {
       openai:      providerStatus(config.providers.openai),

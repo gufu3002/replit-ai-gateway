@@ -237,10 +237,12 @@ function applyPassthroughDisguise(
 // to reject the request. Only these codes trigger an automatic no-disguise retry.
 const DISGUISE_RETRY_STATUSES = new Set([400, 403, 407, 422]);
 
-// Default upstream request timeout in milliseconds (10 minutes).
-// Long enough for extended reasoning / large completions, short enough to
-// release hung connections before they exhaust server resources.
-const UPSTREAM_TIMEOUT_MS = 10 * 60 * 1000;
+// Tiered upstream request timeouts.
+// Stream paths can run for the full 10 min (reasoning/large completions).
+// Non-stream paths (JSON responses) time out at 3 min — long enough for
+// complex non-streaming reasoning, short enough to release hung connections.
+const UPSTREAM_TIMEOUT_MS = 10 * 60 * 1000;        // 10 min — streaming
+const UPSTREAM_TIMEOUT_NONSTREAM_MS = 3 * 60 * 1000; // 3 min — non-streaming JSON
 
 function sanitizeUrlForLog(url: string): string {
   return url.replace(
@@ -252,9 +254,10 @@ function sanitizeUrlForLog(url: string): string {
 function fetchWithTimeout(
   url: string,
   init: RequestInit,
+  timeoutMs: number = UPSTREAM_TIMEOUT_MS,
 ): Promise<globalThis.Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...init, signal: controller.signal }).finally(() =>
     clearTimeout(timer),
   );
@@ -266,7 +269,8 @@ function fetchWithTimeout(
  * the request is automatically retried once without any disguise headers.
  * The `baseInit` must NOT have disguise already applied — it is the plain init
  * that `applyPassthroughDisguise` will be called on internally.
- * All requests are subject to UPSTREAM_TIMEOUT_MS to prevent hung connections.
+ * Pass `timeoutMs` to override the default — use UPSTREAM_TIMEOUT_NONSTREAM_MS
+ * for non-streaming JSON responses, the default for streaming paths.
  */
 async function fetchWithDisguiseFallback(
   url: string,
@@ -274,6 +278,7 @@ async function fetchWithDisguiseFallback(
   provider?: ProviderType,
   requestPathOverride?: string,
   incomingUserAgent?: string,
+  timeoutMs: number = UPSTREAM_TIMEOUT_MS,
 ): Promise<{
   response: globalThis.Response;
   usedFallback: boolean;
@@ -295,7 +300,7 @@ async function fetchWithDisguiseFallback(
     incomingUserAgent,
   );
   const upstreamRequestHeaders = toHeaderRecord(disguisedInit.headers);
-  const response = await fetchWithTimeout(url, disguisedInit);
+  const response = await fetchWithTimeout(url, disguisedInit, timeoutMs);
 
   if (
     !response.ok &&
@@ -323,7 +328,7 @@ async function fetchWithDisguiseFallback(
     );
     const retryHeaders = toHeaderRecord(plainInit.headers);
     return {
-      response: await fetchWithTimeout(url, plainInit),
+      response: await fetchWithTimeout(url, plainInit, timeoutMs),
       usedFallback: true,
       upstreamRequestHeaders: retryHeaders,
     };
@@ -690,6 +695,7 @@ export async function rawVendorPassthroughNonStream(
     provider,
     requestPath,
     incomingHeaders?.["user-agent"] as string | undefined,
+    UPSTREAM_TIMEOUT_NONSTREAM_MS,
   );
   if (usedFallback) {
     logger.info(
@@ -1226,6 +1232,7 @@ export async function rawPassthroughNonStream(
     provider,
     requestPath,
     incomingHeaders?.["user-agent"] as string | undefined,
+    UPSTREAM_TIMEOUT_NONSTREAM_MS,
   );
   if (usedFallback) {
     logger.info(

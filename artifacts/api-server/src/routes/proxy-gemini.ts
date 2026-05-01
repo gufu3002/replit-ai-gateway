@@ -266,7 +266,7 @@ export async function handleGeminiNonStream(
     throw err;
   }
 
-  const geminiResponse = JSON.parse(responseText) as {
+  let geminiResponse: {
     candidates?: Array<{
       content?: { parts?: Array<{ text?: string; thought?: boolean }> };
       finishReason?: string;
@@ -276,6 +276,16 @@ export async function handleGeminiNonStream(
       candidatesTokenCount?: number;
     };
   };
+  try {
+    geminiResponse = JSON.parse(responseText);
+  } catch {
+    const preview = responseText.slice(0, 200);
+    const err = new Error(
+      `上游 Gemini 返回了非 JSON 响应（前 200 字节）：${preview}`,
+    ) as Error & { status?: number };
+    err.status = 502;
+    throw err;
+  }
 
   const id = `chatcmpl-${Date.now()}`;
   const created = Math.floor(Date.now() / 1000);

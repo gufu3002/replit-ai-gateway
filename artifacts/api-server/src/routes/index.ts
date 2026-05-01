@@ -12,10 +12,15 @@ import { getAvailableModels } from "./proxy-models";
 // SSRF guard: reject baseUrl values that resolve to private/loopback networks
 // ---------------------------------------------------------------------------
 // Matches hostnames / IPv6 that resolve to loopback or private networks.
-// Covers both plain IPv4 and IPv4-mapped-IPv6 (::ffff:*) bypasses.
+// Covers:
+//   - IPv4 loopback/private/link-local/CGNAT ranges
+//   - IPv4-mapped-IPv6 (::ffff:*) bypasses
+//   - GCP instance metadata hostname
+//   - ULA (fd00::/8) and loopback (::1) IPv6
 // Node.js URL#hostname INCLUDES brackets for IPv6 (e.g. [::1]), so we
 // strip them before testing to get the bare address.
-const PRIVATE_IP_RE = /^(localhost|0\.0\.0\.0|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|::1$|::ffff:|fd[0-9a-f]{2}:)/i;
+const PRIVATE_IP_RE =
+  /^(localhost|0\.0\.0\.0|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|169\.254\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|::1$|::ffff:|fd[0-9a-f]{2}:|metadata\.google\.internal)/i;
 
 function isPrivateUrl(raw: string): boolean {
   try {

@@ -106,7 +106,14 @@ React + Vite 单页前端应用，运行在 `/`。主要结构：
 
 ### AI Gateway API Server（`artifacts/api-server`）
 
-当前版本：**0.1.79**（构建日期：2026-05-01）。服务端版本常量位于 `src/routes/health.ts`，前端控制台版本常量位于 `src/data/models.ts`（`LOCAL_VERSION`、`LOCAL_BUILD_TIME`）。
+当前版本：**0.1.80**（构建日期：2026-05-01）。服务端版本常量位于 `src/routes/health.ts`，前端控制台版本常量位于 `src/data/models.ts`（`LOCAL_VERSION`、`LOCAL_BUILD_TIME`）。
+
+**v0.1.80 安全加固（全部已完成）：**
+- 后端批次一：CSP 启用、CORS 显式配置、rate-limit skip 回调移除、URL ReDoS 防护（2048 字符上限）、SSRF 正则补充 CGNAT/GCP metadata 段、Zod 配置校验 + 随机 proxyKey 自动生成、分层超时（非流式 3 min / 流式 10 min）
+- 前端 LogsPage：401/403 停止轮询并展示错误横幅（可关闭），网络错误改为 console.warn 后继续重试
+- 前端 UsageLogsPage：Replay 增加 AbortController + ✕ 取消按钮，关闭/跳转时自动取消进行中请求，超时从 120s 降至 60s，openReplay 同样处理 401/403
+- 后端批次二：① `trust proxy 1` 修复 Replit 反向代理后 req.ip 失真，确保速率限制按真实客户端 IP 生效；② `proxy-anthropic.ts` / `proxy-gemini.ts` 非流式路径 JSON.parse 包裹 try/catch，上游返回非 JSON 时返回 502 并附前 200 字节预览（避免 SyntaxError 裸抛并泄露上游原始内容）；③ `getPublicConfig()` 在 adminKey 未配置时追加 `adminKeyWarning` 字段，明确告知 Proxy Key 当前具备管理权限；④ 404 处理器移除 `REPLIT_DOMAINS` 域名泄露（`docs` 字段删除）
+- 前端批次二：① `getReplayUrl` / `getCompareUrl` 对 Gemini 路径中的模型名改用 `encodeURIComponent()` 防路径穿越；② 删除 replay 请求中已废弃的 `X-Gateway-Debug-Headers: "1"` 头（后端 v0.1.76 已移除处理逻辑，该头仅出现在 NOT_FORWARDED 列表中）
 
 **路由服务商**（15 个）：openai、anthropic、gemini、openrouter、deepseek、xai、mistral、moonshot、groq、together、siliconflow、cerebras、fireworks、novita、hyperbolic。路由识别逻辑位于 `src/lib/providers.ts` 的 `detectProvider`。DeepSeek 模型识别采用前缀匹配（`deepseek-` 开头且不含 `/`），xAI/Mistral/Moonshot 使用无斜杠官方模型名前缀，Groq/Together/SiliconFlow/Cerebras/Fireworks/Novita/Hyperbolic 使用本地命名空间前缀（`groq/`、`together/`、`siliconflow/`、`cerebras/`、`fireworks/`、`novita/`、`hyperbolic/`）并在转发上游前剥离前缀。DeepSeek 等非 Replit 托管服务商凭证由用户自行在设置页填写对应平台 API Key。
 
