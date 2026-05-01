@@ -106,7 +106,17 @@ React + Vite 单页前端应用，运行在 `/`。主要结构：
 
 ### AI Gateway API Server（`artifacts/api-server`）
 
-当前版本：**0.1.80**（构建日期：2026-05-01）。服务端版本常量位于 `src/routes/health.ts`，前端控制台版本常量位于 `src/data/models.ts`（`LOCAL_VERSION`、`LOCAL_BUILD_TIME`）。
+当前版本：**0.1.81**（构建日期：2026-05-01）。服务端版本常量位于 `src/routes/health.ts`，前端控制台版本常量位于 `src/data/models.ts`（`LOCAL_VERSION`、`LOCAL_BUILD_TIME`）。
+
+**v0.1.81 代码审计修复（全部已完成）：**
+- 安全①：500 全局错误处理器改为固定字符串，不再向客户端暴露 `err.message`
+- 安全②：`GET /api/models?refresh=1` 新增认证校验，防止消耗上游配额
+- 安全③：`GET /api/settings/disguise` 响应移除 `headers` 字段，防止 SDK 伪装指纹泄露
+- 安全④：`chart.tsx` 的 `dangerouslySetInnerHTML` CSS 值注入增加白名单正则防护
+- 质量⑤：`LogsPage` 增加 `fetchAbortRef`（AbortController），`stopPolling()` 立即取消进行中的 fetch
+- 质量⑥：`proxy-raw.ts` `getProviderCredentials()` 新增注释说明 Replit 平台注入 localhost URL 的设计意图
+- 质量⑦：`URL_AC_VALID_KEYS` 新增注释说明 `enabled`/`global` 双键并存与向后兼容设计
+- 质量⑧：`types.ts` `SystemConfig` 新增 `adminKeyWarning?` 字段与后端对齐
 
 **v0.1.80 安全加固（全部已完成）：**
 - 后端批次一：CSP 启用、CORS 显式配置、rate-limit skip 回调移除、URL ReDoS 防护（2048 字符上限）、SSRF 正则补充 CGNAT/GCP metadata 段、Zod 配置校验 + 随机 proxyKey 自动生成、分层超时（非流式 3 min / 流式 10 min）

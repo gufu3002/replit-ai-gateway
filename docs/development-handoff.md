@@ -104,6 +104,17 @@ export NODE_ENV=development && pnpm run build && pnpm run start
 - Codex Responses API 专用模型不得误走 `/v1/chat/completions`
 - 非聊天模型可以出现在 `/v1/models`，但聊天端点应返回明确错误
 
+## 安全约束（v0.1.75–v0.1.81 加固）
+
+完整安全约束列表见 `docs/maintenance-guide.md`（"安全约束"节）和 `docs/maintenance-rules.md`（"安全 API 约束"表格）。核心不得退化项：
+
+- **500 错误脱敏**：`app.ts` errorHandler 固定返回 `"Internal server error"`，禁止暴露 `err.message`
+- **模型刷新认证**：`GET /api/models?refresh=1` 已配置密钥时须验证身份，返回 401
+- **CSS 注入防护**：`chart.tsx` 的 `dangerouslySetInnerHTML` 注入值须经白名单正则过滤
+- **密钥比较**：所有密钥比较必须使用 `safeCompare()`，禁止 `===`
+- **Disguise headers 隐藏**：`GET /api/settings/disguise` 响应不含 `headers` 字段（v0.1.81 移除）
+- **SSRF 防护**：用户输入 baseUrl 写入前须经 `isPrivateUrl()` 过滤
+
 ### 前端编码约定
 
 - **共享常量**：服务商颜色、标签、模型列表等全局数据只在 `src/data/models.ts` 中维护，其他文件从此处导入

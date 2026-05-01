@@ -53,8 +53,28 @@ router.get("/config", (_req, res) => {
 });
 
 router.get("/models", async (req, res) => {
+  const forceRefresh = req.query.refresh === "1";
+  // Forced refresh triggers real upstream API calls, consuming upstream quota.
+  // Require authentication so unauthenticated callers cannot exhaust it.
+  if (forceRefresh) {
+    const config = getConfig();
+    const requiredKey = config.adminKey || config.proxyApiKey;
+    if (requiredKey) {
+      const provided = extractApiKey(req);
+      if (!provided || !safeCompare(provided, requiredKey)) {
+        res.status(401).json({
+          error: {
+            message: "Unauthorized: ?refresh=1 requires authentication",
+            type: "invalid_request_error",
+            code: "invalid_api_key",
+          },
+        });
+        return;
+      }
+    }
+  }
   const now = Math.floor(Date.now() / 1000);
-  const { models, sources } = await getAvailableModels(req.query.refresh === "1");
+  const { models, sources } = await getAvailableModels(forceRefresh);
   res.json({
     object: "list",
     source: "replit_live_sync",
@@ -134,6 +154,8 @@ router.get("/settings/url-autocorrect", adminAuth, (_req, res) => {
   res.json({ ...config, enabled: config.global });
 });
 
+// "global" is the internal config field; "enabled" is an alias accepted for
+// external API consumers. Both map to the same toggle. The frontend uses "global".
 const URL_AC_VALID_KEYS = new Set(["chatCompletions", "messages", "models", "geminiGenerate", "geminiStream", "global", "enabled"]);
 
 router.post("/settings/url-autocorrect", adminAuth, async (req, res) => {
@@ -196,7 +218,8 @@ router.get("/settings/disguise", (_req, res) => {
       label: p.label,
       desc: p.desc,
       isSpecial: SPECIAL_IDS.has(id),
-      headers: p.headers,
+      // headers intentionally omitted — exposing full SDK fingerprint details
+      // in a public endpoint would reveal the disguise strategy to observers.
     })),
   });
 });

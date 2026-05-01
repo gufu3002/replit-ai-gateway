@@ -284,9 +284,9 @@ rg "新增模型ID" artifacts/api-portal/src/data/models.ts artifacts/api-server
 - `python-requests`
 - `browser-chrome`
 
-### 当前版本指纹（更新于 2026-05-01，v0.1.74 内容同步）
+### 当前版本指纹（更新于 2026-05-01，v0.1.81 内容同步）
 
-> 已通过 npm registry、PyPI 官方渠道及 GitHub Releases 实时核查。最近更新：v0.1.71 同步 Deno 2.7.12→2.7.13、LiteLLM 1.83.11→1.83.12；v0.1.74（2026-05-01）同步：openai JS 6.34→6.35、anthropic JS 0.90→0.92、@google/genai 1.50.1→1.51.0、openai Python 2.32→2.33、anthropic Python 0.96→0.97、google-genai Python 1.73.1→1.74.0、LiteLLM 1.83.12→1.83.14、Deno 2.7.13→2.7.14、curl 8.19.0→8.20.0、Vercel AI SDK 6.0.168→6.0.170；Chrome 147 截至 2026-05-01 仍为最新稳定版（148 预计 ~2026-05-05 发布）、Bun 1.3.13、httpx 0.28.1、python-requests 2.33.1 均无更新。
+> 已通过 npm registry、PyPI 官方渠道及 GitHub Releases 实时核查。最近更新：v0.1.71 同步 Deno 2.7.12→2.7.13、LiteLLM 1.83.11→1.83.12；v0.1.74（2026-05-01）同步：openai JS 6.34→6.35、anthropic JS 0.90→0.92、@google/genai 1.50.1→1.51.0、openai Python 2.32→2.33、anthropic Python 0.96→0.97、google-genai Python 1.73.1→1.74.0、LiteLLM 1.83.12→1.83.14、Deno 2.7.13→2.7.14、curl 8.19.0→8.20.0、Vercel AI SDK 6.0.168→6.0.170；Chrome 147 截至 2026-05-01 仍为最新稳定版（148 预计 ~2026-05-05 发布）、Bun 1.3.13、httpx 0.28.1、python-requests 2.33.1 均无更新；v0.1.81 无 SDK 版本变更（纯安全 + 质量修复）。
 
 | Preset | user-agent / 关键标识 | 核心版本 |
 |---|---|---|
@@ -329,7 +329,9 @@ rg "新增模型ID" artifacts/api-portal/src/data/models.ts artifacts/api-server
 
 ### Disguise Profile 列表访问规则（核心规则）
 
-`GET /api/settings/disguise` 接口**不需要 Admin Key 认证**。Profile 列表元数据（preset ID、label、desc、headers 字段）属于只读、非敏感的配置信息，前端设置页必须在任何情况下都能展示完整的 profile 列表供用户参考，无论是否已配置 Admin Key。
+`GET /api/settings/disguise` 接口**不需要 Admin Key 认证**。Profile 列表元数据（preset ID、label、desc）属于只读、非敏感的配置信息，前端设置页必须在任何情况下都能展示完整的 profile 列表供用户参考，无论是否已配置 Admin Key。
+
+> **注意**：`headers` 字段已于 v0.1.81 从 GET 响应中**移除**。完整 Header 指纹属于内部伪装实现细节，通过公开接口返回会暴露伪装策略。任何未来重构都**不得**将 headers 重新加入公开 GET 响应。前端仅需 preset ID、label、desc 来渲染选择列表。
 
 - **修改当前 preset**（`POST /api/settings/disguise`）仍然需要 Admin Key 认证。
 - 前端读取 profile 列表的 `useEffect` 中**不得**以 `adminKey` 是否存在作为 early-return 条件。
@@ -384,7 +386,7 @@ rg "新增模型ID" artifacts/api-portal/src/data/models.ts artifacts/api-server
    - `DISGUISE_PROFILES`
    - 如需自动选择，更新 `PROVIDER_PRESET_MAP` 或 `resolvePresetForProvider()`
    - 前端设置页使用的 preset 列表接口显示文案
-5. 启动后端通过 `GET /api/settings/disguise`（无需 Admin Key）检查新 preset 是否出现在 `profiles` 列表中
+5. 启动后端通过 `GET /api/settings/disguise`（无需 Admin Key）检查新 preset 是否出现在 `profiles` 列表中（响应包含 `id`、`label`、`desc`；`headers` 字段已于 v0.1.81 移除，不会出现）
 6. 切换到该 preset，发起一次测试请求，检查上游请求日志或调试输出是否符合预期
 
 ### 不建议维护的指纹
@@ -396,6 +398,36 @@ rg "新增模型ID" artifacts/api-portal/src/data/models.ts artifacts/api-server
 - 底层 TCP 行为
 
 如确需实现，需要更换或包裹 Node.js 底层 HTTP 客户端，风险高于普通 Header preset 维护。
+
+## 安全约束（v0.1.75–v0.1.81 加固，不得退化）
+
+以下安全约束已在代码中生效，维护时**不得退化**：
+
+### 错误响应脱敏
+- 500 全局错误处理器（`app.ts` errorHandler）固定返回 `"Internal server error"`，**绝对不得**将 `err.message` 或 `err.stack` 注入客户端响应体。错误细节只能写入服务端日志（`logger.error`）。
+
+### 模型刷新认证
+- `GET /api/models?refresh=1` 在已配置 Admin Key 或 Proxy Key 时**必须**要求认证；未通过认证的 `?refresh=1` 请求应返回 `401`，防止未认证调用方消耗上游 API 配额。
+
+### CSS 注入防护
+- `chart.tsx` 的 `dangerouslySetInnerHTML` 在注入 CSS 自定义属性时，颜色值必须通过 `SAFE_CSS_COLOR_RE` 白名单正则过滤，属性名通过 `SAFE_CSS_KEY_RE` 过滤。不得移除或放宽此校验。
+
+### Replit AI Integration URL 的 SSRF 白名单
+- `getProviderCredentials()` 中 `AI_INTEGRATIONS_*_BASE_URL` 环境变量指向 `localhost:1106`（Replit 平台注入），**设计上不走** `isPrivateUrl()` 校验。用户在 Settings 页手动配置的 `baseUrl` 仍须经过 SSRF 校验（`POST /api/config/provider`）。
+
+### 计时攻击防护
+- 所有密钥比较（Admin Key、Proxy Key）必须使用 `safeCompare()`（`lib/auth.ts`），不得改用直接 `===`。
+
+### 请求体大小限制
+- JSON 请求体上限为 **256 MB**，`urlencoded` 上限为 **1 MB**（`app.ts`），不得取消此限制。
+
+### 速率限制
+- 管理接口每 IP 每 15 分钟限 30 次，代理接口每 IP 每分钟限 300 次（`app.ts` rate limiter）。已配置密钥时不自动跳过管理接口速率限制，仅在无任何密钥配置时跳过（开放访问模式）。
+
+### SSRF 防护
+- `isPrivateUrl()`（`routes/index.ts`）在写入 `baseUrl` 前校验 hostname，需涵盖 RFC 1918 私有地址段、回环地址、CGNAT（100.64.0.0/10）、云元数据地址（169.254.169.254、metadata.google.internal）等，**不得缩减**已有正则覆盖范围。
+
+---
 
 ## 版本维护
 

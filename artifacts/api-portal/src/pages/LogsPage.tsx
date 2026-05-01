@@ -76,12 +76,20 @@ export default function LogsPage({ adminKey, setAdminKey, baseUrl, externalSearc
   const activeRef = useRef(false);
   const adminKeyRef = useRef(adminKey);
   const baseUrlRef = useRef(baseUrl);
+  // Tracks the AbortController for the in-flight fetchLogs request so that
+  // stopPolling() can cancel it immediately rather than waiting for it to settle.
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   adminKeyRef.current = adminKey;
   baseUrlRef.current = baseUrl;
 
   const stopPolling = useCallback(() => {
     activeRef.current = false;
+    // Abort any in-flight request immediately.
+    if (fetchAbortRef.current) {
+      fetchAbortRef.current.abort();
+      fetchAbortRef.current = null;
+    }
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
@@ -97,11 +105,15 @@ export default function LogsPage({ adminKey, setAdminKey, baseUrl, externalSearc
     const key = adminKeyRef.current;
     const url = baseUrlRef.current;
     if (!key || !activeRef.current) return;
+    // Create a fresh AbortController so stopPolling() can cancel this request.
+    const abortController = new AbortController();
+    fetchAbortRef.current = abortController;
     try {
       const params = sinceIndex !== undefined ? `sinceIndex=${sinceIndex}` : `limit=100`;
       const res = await fetch(`${url}/api/logs?${params}`, {
         headers: { Authorization: `Bearer ${key}` },
         cache: "no-store",
+        signal: abortController.signal,
       });
       if (res.status === 401 || res.status === 403) {
         // Auth failure: stop polling and surface the error
@@ -127,9 +139,14 @@ export default function LogsPage({ adminKey, setAdminKey, baseUrl, externalSearc
       }
       setLogConnected(true);
     } catch (err) {
-      // Network errors: log for debugging but let the interval retry
-      if (err instanceof Error && err.name !== "AbortError") {
-        console.warn("[LogsPage] fetchLogs error:", err.message);
+      // Abort = user stopped polling intentionally; silently discard.
+      if (err instanceof Error && err.name === "AbortError") return;
+      // Network errors: log for debugging but let the interval retry.
+      console.warn("[LogsPage] fetchLogs error:", err instanceof Error ? err.message : err);
+    } finally {
+      // Clear the ref so stopPolling() doesn't try to abort a settled request.
+      if (fetchAbortRef.current === abortController) {
+        fetchAbortRef.current = null;
       }
     }
   }, []);

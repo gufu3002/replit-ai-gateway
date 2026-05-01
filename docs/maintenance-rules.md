@@ -73,4 +73,18 @@
 
 ---
 
-*最后更新：2026-05-01*
+## 四、安全 API 约束（v0.1.75–v0.1.81，不得退化）
+
+| 约束 | 所在文件 | 规则 |
+|---|---|---|
+| 500 错误脱敏 | `app.ts` errorHandler | 固定返回 `"Internal server error"`，禁止暴露 `err.message` |
+| 模型刷新认证 | `routes/index.ts` GET `/api/models` | `?refresh=1` 时若已配置密钥则必须验证身份，失败返回 401 |
+| CSS 注入防护 | `components/ui/chart.tsx` | `dangerouslySetInnerHTML` 注入值须经 `SAFE_CSS_COLOR_RE` 白名单过滤 |
+| 密钥比较 | `lib/auth.ts` `safeCompare()` | 所有密钥比较必须使用计时安全方法，禁止 `===` |
+| 请求体大小 | `app.ts` body-parser | JSON 256 MB / urlencoded 1 MB，不得移除 |
+| SSRF 防护 | `routes/index.ts` `isPrivateUrl()` | 用户输入的 baseUrl 必须过滤私有/回环/元数据地址 |
+| Disguise GET headers | `routes/index.ts` GET `/api/settings/disguise` | 响应**不得**包含 `headers` 字段（v0.1.81 移除） |
+
+---
+
+*最后更新：2026-05-01（v0.1.81）*

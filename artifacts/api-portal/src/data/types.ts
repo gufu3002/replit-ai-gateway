@@ -8,6 +8,8 @@ export interface SystemConfig {
   proxyApiKey: string;
   isDefaultKey: boolean;
   adminKeyConfigured: boolean;
+  /** Optional advisory warning from the server about the admin key security posture. */
+  adminKeyWarning?: string;
   budgetQuotaUsd?: number;
   providers: Record<string, ProviderConfig>;
 }

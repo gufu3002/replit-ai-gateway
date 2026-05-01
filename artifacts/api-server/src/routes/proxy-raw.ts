@@ -1051,6 +1051,15 @@ export function getProviderCredentials(
   const envSuffix = REPLIT_AI_INTEGRATION_SUFFIX[provider];
   const defaultBase = PROVIDER_DEFAULTS[provider] ?? "";
 
+  // Priority: user-set config (validated by isPrivateUrl in /config/provider)
+  //           → Replit AI Integration env var (platform-injected, always localhost:1106)
+  //           → hard-coded public default.
+  //
+  // NOTE: Replit AI Integration URLs (AI_INTEGRATIONS_*_BASE_URL) deliberately
+  // point to localhost (the Replit model-farm proxy) and are injected by the
+  // platform, not user-controlled. Applying isPrivateUrl() to them would block
+  // all four Replit-managed providers. They are intentionally trusted as-is.
+  // Only user-provided baseUrls from the config file go through SSRF validation.
   const baseUrl =
     p?.baseUrl ||
     (envSuffix

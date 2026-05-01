@@ -443,14 +443,16 @@ app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
     });
     return;
   }
-  const message = err instanceof Error ? err.message : "Internal server error";
+  // Log full error details server-side, but never expose err.message to
+  // clients — it may contain internal paths, connection strings, or stack
+  // traces. Return a generic message instead.
   logger.error(
     { err, method: req.method, path: req.path },
     "Unhandled request error",
   );
   res.status(500).json({
     error: {
-      message,
+      message: "Internal server error",
       type: "server_error",
       code: "internal_error",
     },

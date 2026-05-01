@@ -1,6 +1,6 @@
 # API 透传机制文档
 
-> 当前实现版本：`0.1.71`
+> 当前实现版本：`0.1.81`
 
 ## 概述
 
@@ -336,7 +336,9 @@ Accept-Encoding: identity
 
 ### Disguise Profile 列表访问规则（核心规则）
 
-`GET /api/settings/disguise` **不需要 Admin Key 认证**。Profile 列表（preset ID、label、desc、headers 字段）属于只读元数据，前端设置页必须在任何情况下都能加载并展示完整列表，无论是否已配置 Admin Key。
+`GET /api/settings/disguise` **不需要 Admin Key 认证**。Profile 列表（preset ID、label、desc）属于只读元数据，前端设置页必须在任何情况下都能加载并展示完整列表，无论是否已配置 Admin Key。
+
+> **注意**：`headers` 字段已于 v0.1.81 从 GET 响应中**移除**。SDK 伪装的完整 Header 指纹属于内部实现细节，通过公开接口暴露会泄露伪装策略。前端只需展示 preset ID、label 和 desc，无需读取 headers。
 
 - `POST /api/settings/disguise`（切换 preset）仍然需要 Admin Key 认证。
 - 后端该路由**不得**加 `adminAuth` 中间件。

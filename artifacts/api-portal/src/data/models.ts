@@ -12,7 +12,7 @@ export interface ModelEntry {
 
 export type TabId = "overview" | "models" | "settings" | "reference" | "logs" | "usage" | "billing" | "docs";
 
-export const LOCAL_VERSION = "0.1.79";
+export const LOCAL_VERSION = "0.1.81";
 export const LOCAL_BUILD_TIME = "2026-05-01";
 
 export const OPENAI_MODELS: ModelEntry[] = [

@@ -65,6 +65,19 @@ const ChartContainer = React.forwardRef<
 })
 ChartContainer.displayName = "Chart"
 
+// Allow only characters that are valid in CSS color values:
+// hex digits, letters, digits, spaces, commas, dots, parens, slashes, hyphens, %
+// This prevents CSS injection (e.g. `}</style><script>`) via crafted color strings.
+const SAFE_CSS_COLOR_RE = /^[a-zA-Z0-9#%(),.\-/ ]+$/;
+
+function sanitizeCssValue(value: string): string | null {
+  const trimmed = value.trim();
+  return SAFE_CSS_COLOR_RE.test(trimmed) ? trimmed : null;
+}
+
+// CSS custom property names: allow only word chars and hyphens.
+const SAFE_CSS_KEY_RE = /^[\w-]+$/;
+
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(
     ([, config]) => config.theme || config.color
@@ -83,10 +96,14 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
 ${prefix} [data-chart=${id}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
-    const color =
+    const rawColor =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
       itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
+    if (!rawColor) return null;
+    // Sanitize both the key name and the color value before injecting into CSS.
+    const safeKey = SAFE_CSS_KEY_RE.test(key) ? key : null;
+    const safeColor = sanitizeCssValue(rawColor);
+    return safeKey && safeColor ? `  --color-${safeKey}: ${safeColor};` : null
   })
   .join("\n")}
 }
