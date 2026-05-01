@@ -1,0 +1,79 @@
+{
+  "proxyApiKey": "24gV*fn#KL5lF)-8Uh(bB*Yg35vbCpp0f{\"35n87gTB357dr",
+  "adminKey": "D63KgiGH@%980yges7bghn9io35bnu(@)_fhs-0h35",
+  "budgetQuotaUsd": 5,
+  "providers": {
+    "openai": {
+      "baseUrl": "http://localhost:1106/modelfarm/openai",
+      "apiKey": "_DUMMY_API_KEY_"
+    },
+    "anthropic": {
+      "baseUrl": "http://localhost:1106/modelfarm/anthropic",
+      "apiKey": "_DUMMY_API_KEY_"
+    },
+    "gemini": {
+      "baseUrl": "http://localhost:1106/modelfarm/gemini",
+      "apiKey": "_DUMMY_API_KEY_"
+    },
+    "openrouter": {
+      "baseUrl": "http://localhost:1106/modelfarm/openrouter",
+      "apiKey": "_DUMMY_API_KEY_"
+    },
+    "deepseek": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "xai": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "mistral": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "moonshot": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "groq": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "together": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "siliconflow": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "cerebras": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "fireworks": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "novita": {
+      "baseUrl": "",
+      "apiKey": ""
+    },
+    "hyperbolic": {
+      "baseUrl": "",
+      "apiKey": ""
+    }
+  },
+  "settings": {
+    "urlAutoCorrect": {
+      "chatCompletions": true,
+      "messages": true,
+      "models": true,
+      "geminiGenerate": true,
+      "geminiStream": true,
+      "global": true,
+      "gemini": true
+    },
+    "disguisePreset": "auto"
+  }
+}

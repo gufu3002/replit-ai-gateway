@@ -1,0 +1,26 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="16" x2="156" y2="164" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="48%" stop-color="#312e81"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="48" y1="42" x2="132" y2="138" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#e0e7ff"/>
+      <stop offset="55%" stop-color="#a5b4fc"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="10" y="10" width="160" height="160" rx="42" fill="url(#bg)"/>
+  <rect x="11" y="11" width="158" height="158" rx="41" stroke="rgba(255,255,255,0.16)" stroke-width="2"/>
+  <path d="M47 98L30 90L47 82" stroke="#a5b4fc" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M133 82L150 90L133 98" stroke="#67e8f9" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M90 42L127 132H111L104 113H76L69 132H53L90 42ZM81 99H99L90 73L81 99Z" fill="#f8fafc"/>
+  <path d="M99 99L90 73L127 132H111L104 113H96L99 99Z" fill="url(#mark)" opacity="0.9"/>
+  <circle cx="90" cy="90" r="48" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+  <circle cx="90" cy="90" r="64" stroke="rgba(103,232,249,0.1)" stroke-width="2" stroke-dasharray="8 10"/>
+</svg>
