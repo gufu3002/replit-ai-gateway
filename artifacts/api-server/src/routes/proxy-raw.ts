@@ -340,7 +340,7 @@ async function fetchWithDisguiseFallback(
 // low enough to protect against a misbehaving upstream sending GB-scale bodies.
 const MAX_UPSTREAM_RESPONSE_BYTES = 100 * 1024 * 1024;
 
-async function readResponseBufferCapped(upstream: globalThis.Response): Promise<ArrayBuffer> {
+export async function readResponseBufferCapped(upstream: globalThis.Response): Promise<ArrayBuffer> {
   const contentLengthHeader = upstream.headers.get("content-length");
   if (contentLengthHeader) {
     const cl = parseInt(contentLengthHeader, 10);
@@ -374,6 +374,11 @@ async function readResponseBufferCapped(upstream: globalThis.Response): Promise<
   let offset = 0;
   for (const chunk of chunks) { combined.set(chunk, offset); offset += chunk.byteLength; }
   return combined.buffer;
+}
+
+/** Convenience wrapper: reads the capped buffer and decodes to UTF-8 string. */
+export async function readResponseTextCapped(upstream: globalThis.Response): Promise<string> {
+  return new TextDecoder().decode(await readResponseBufferCapped(upstream));
 }
 
 function numberValue(value: unknown): number | undefined {
@@ -642,12 +647,25 @@ export async function rawVendorPassthroughStream(
     }
     reader.releaseLock();
   }
-  logUsage({
-    status: "success",
-    statusCode: upstream.status,
-    inputTokens: usageState.inputTokens,
-    outputTokens: usageState.outputTokens,
-  });
+  if (readerCanceled) {
+    // Client disconnected before the stream finished — log as an error
+    // (HTTP 499 = Client Closed Request, nginx convention).
+    // Token counts up to disconnect are preserved for partial billing accuracy.
+    logUsage({
+      status: "error",
+      statusCode: 499,
+      inputTokens: usageState.inputTokens,
+      outputTokens: usageState.outputTokens,
+      errorMessage: "Client closed connection before stream completed",
+    });
+  } else {
+    logUsage({
+      status: "success",
+      statusCode: upstream.status,
+      inputTokens: usageState.inputTokens,
+      outputTokens: usageState.outputTokens,
+    });
+  }
   if (!res.writableEnded) res.end();
   return true;
 }
@@ -1163,12 +1181,22 @@ export async function rawPassthroughStream(
     }
     reader.releaseLock();
   }
-  logUsage({
-    status: "success",
-    statusCode: upstream.status,
-    inputTokens: usageState.inputTokens,
-    outputTokens: usageState.outputTokens,
-  });
+  if (readerCanceled) {
+    logUsage({
+      status: "error",
+      statusCode: 499,
+      inputTokens: usageState.inputTokens,
+      outputTokens: usageState.outputTokens,
+      errorMessage: "Client closed connection before stream completed",
+    });
+  } else {
+    logUsage({
+      status: "success",
+      statusCode: upstream.status,
+      inputTokens: usageState.inputTokens,
+      outputTokens: usageState.outputTokens,
+    });
+  }
   if (!res.writableEnded) res.end();
   return true;
 }

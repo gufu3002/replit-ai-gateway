@@ -68,8 +68,8 @@
 ## 三、API Server 路由结构
 
 - 所有路由挂载于 `artifacts/api-server/src/app.ts`
-- 计费 / 用量路由：`/api/billing/*`，`/api/usage/*`
-- 代理路由：`/api/v1/*`（OpenAI 兼容格式）
+- 计费 / 用量路由：`/api/billing/*`，`/api/usage-logs/*`，`/api/logs/*`
+- 代理路由：`/v1/*`（OpenAI 兼容格式，**无** `/api` 前缀）、`/v1beta/*`（Gemini 原生格式）
 
 ---
 

@@ -19,6 +19,8 @@ import {
   buildAnthropicHeaders,
   fetchAnthropicRaw,
   parseAnthropicSSE,
+  readResponseBufferCapped,
+  readResponseTextCapped,
 } from "./proxy-raw";
 
 // Models that use the newer adaptive thinking API instead of the classic
@@ -107,7 +109,7 @@ export async function handleAnthropicStream(
   const upstream = await fetchAnthropicRaw(baseUrl, apiKey, anthropicBody, "anthropic", undefined, thinkingHeaders);
 
   if (!upstream.ok) {
-    const errText = await upstream.text();
+    const errText = await readResponseTextCapped(upstream);
     const err = new Error(errText) as Error & { status?: number };
     err.status = upstream.status;
     throw err;
@@ -324,8 +326,7 @@ export async function handleAnthropicNonStream(
   };
 
   const upstream = await fetchAnthropicRaw(baseUrl, apiKey, anthropicBody, "anthropic", undefined, thinkingHeaders);
-  const responseBuffer = await upstream.arrayBuffer();
-  const responseText = new TextDecoder().decode(responseBuffer);
+  const responseText = await readResponseTextCapped(upstream);
 
   if (!upstream.ok) {
     const err = new Error(responseText) as Error & { status?: number };

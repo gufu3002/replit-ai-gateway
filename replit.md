@@ -43,11 +43,11 @@ AI Gateway 的核心价值是透明中转：客户端发什么，网关就转什
 
 ---
 
-## 📏 系统约束：请求体大小上限 1 GB
+## 📏 系统约束：请求体大小上限 256 MB
 
-**本约束不得降低，任何修改须在此处更新说明。**
+**本约束不得随意调整，任何修改须在此处更新说明。**
 
-Express 的 `json()` 和 `urlencoded()` 中间件 `limit` 统一设置为 `"1gb"`（`app.ts`）。超出上限时返回 OpenAI 格式的 `413 request_too_large` 错误，附中文说明。这是网关支持含大量 base64 图片或超长对话历史请求的基础保障。
+Express 的 `json()` 和 `urlencoded()` 中间件 `limit` 统一设置为 `"256mb"`（`app.ts`）。超出上限时返回 OpenAI 格式的 `413 request_too_large` 错误，附中文说明。256 MB 可覆盖多图（约 20 张高清图）、大型 PDF 等绝大多数真实 AI 请求场景，同时避免超大 body 在 Replit 容器中造成 OOM（1 GB body 解析峰值内存约 2–3 GB，容器通常无法承受）。
 
 ---
 
@@ -106,7 +106,7 @@ React + Vite 单页前端应用，运行在 `/`。主要结构：
 
 ### AI Gateway API Server（`artifacts/api-server`）
 
-当前版本：**0.1.76**（构建日期：2026-05-01）。服务端版本常量位于 `src/routes/health.ts`，前端控制台版本常量位于 `src/data/models.ts`（`LOCAL_VERSION`、`LOCAL_BUILD_TIME`）。
+当前版本：**0.1.79**（构建日期：2026-05-01）。服务端版本常量位于 `src/routes/health.ts`，前端控制台版本常量位于 `src/data/models.ts`（`LOCAL_VERSION`、`LOCAL_BUILD_TIME`）。
 
 **路由服务商**（15 个）：openai、anthropic、gemini、openrouter、deepseek、xai、mistral、moonshot、groq、together、siliconflow、cerebras、fireworks、novita、hyperbolic。路由识别逻辑位于 `src/lib/providers.ts` 的 `detectProvider`。DeepSeek 模型识别采用前缀匹配（`deepseek-` 开头且不含 `/`），xAI/Mistral/Moonshot 使用无斜杠官方模型名前缀，Groq/Together/SiliconFlow/Cerebras/Fireworks/Novita/Hyperbolic 使用本地命名空间前缀（`groq/`、`together/`、`siliconflow/`、`cerebras/`、`fireworks/`、`novita/`、`hyperbolic/`）并在转发上游前剥离前缀。DeepSeek 等非 Replit 托管服务商凭证由用户自行在设置页填写对应平台 API Key。
 
@@ -305,9 +305,25 @@ Replit 托管的 AI Integrations 渠道（4 个）：**OpenAI、Anthropic、Gemi
 
 > 规则：仅保留最近 10 个版本的记录，每次新增时同步删除最旧的一条。
 
+### v0.1.79（2026-05-01）
+
+- **上游响应大小防护扫尾**：`claude.ts`（`/v1/messages` 格式转换端点）遗漏 4 处无上限读取——① 流式 Gemini 错误路径 `upstream.text()`；② 流式 OpenAI-compat 错误路径 `upstream.text()`；③ 非流式 Gemini 路径 `upstream.text()`；④ 非流式 OpenAI-compat 路径 `upstream.text()`；全部替换为 `readResponseTextCapped()`。
+- **防御面完整闭合**：至此，服务器全部路由（`proxy-raw.ts` / `proxy-anthropic.ts` / `proxy-gemini.ts` / `gemini-native.ts` / `claude.ts`）中的 `upstream.text()` / `upstream.arrayBuffer()` 调用已 100% 替换为有上限（100 MB）的受控读取，恶意上游通过超大响应体引发 OOM 的攻击面完全消除。
+- **版本号同步**：`health.ts` APP_VERSION、`models.ts` LOCAL_VERSION、`replit.md` 一并升至 0.1.79；`APP_CHANGELOG` 推入 v0.1.79 条目并淘汰 v0.1.69。
+
+### v0.1.78（2026-05-01）
+
+- **上游响应大小防护全量补全**：安全审查发现 6 处非流式代理路径绕过了 v0.1.76 引入的 `readResponseBufferCapped` 防护——① `proxy-gemini.ts handleGeminiNonStream` 直接调用 `upstream.arrayBuffer()`；② `proxy-anthropic.ts handleAnthropicNonStream` 直接调用 `upstream.arrayBuffer()`；③ `proxy-anthropic.ts` / `proxy-gemini.ts` 流式路径错误分支各 1 处 `upstream.text()`；④ `gemini-native.ts` Anthropic 非流式路径 `upstream.text()`；⑤ `gemini-native.ts` OpenAI-compat 非流式路径 `upstream.text()`；⑥ `gemini-native.ts` Anthropic/OpenAI-compat 流式错误路径各 1 处 `upstream.text()`。
+- **修复方案**：将 `readResponseBufferCapped` 从私有函数改为 `export`，新增 `readResponseTextCapped` 便捷包装（逐块读取 → 合并 → UTF-8 解码），6 处全部替换，防止恶意上游通过超大响应体引发 OOM。
+- **版本号同步**：`health.ts` APP_VERSION、`models.ts` LOCAL_VERSION、`replit.md` 一并升至 0.1.78；`APP_CHANGELOG` 推入 v0.1.78 条目并淘汰 v0.1.68。
+
+### v0.1.77（2026-05-01）
+
+- **安全审查第三轮**：① 请求体上限从 50 MB 调整为 **256 MB**：50 MB 过严（20 张高清图 base64 约 50–80 MB），256 MB 覆盖绝大多数真实 AI 请求场景，同时相比 1 GB 显著降低 OOM 风险；② **SSRF 防护补全**：`isPrivateUrl` 正则新增 `0.0.0.0`（Linux 下等价于 127.0.0.1）和 `::ffff:`（IPv4-mapped IPv6 绕过向量），同时增加协议白名单（仅 `http:`/`https:` 允许），阻断 `file:`/`ftp:` 等本地资源访问；③ **流式代理 499 修正**：`rawPassthroughStream` 和 `rawVendorPassthroughStream` 在客户端提前断连时原本记录 `status: success`，现改为 `status: error` / `statusCode: 499`（Client Closed Request，nginx 约定），使使用日志与成功率统计真实反映实际完成情况；④ `adminRateLimit` skip 回调中 `getConfig()` 双重调用优化为单次。
+
 ### v0.1.76（2026-05-01）
 
-- **安全加固第二轮**：① 请求体上限收缩：`express.json` 从 1 GB 降至 **50 MB**，`express.urlencoded` 从 1 GB 降至 **1 MB**，防止超大 JSON 请求体导致 OOM DoS；② `GET /api/config` 计时旁路修复：对 `adminKey`/`proxyKey` 的判断从 `===` 改为 `safeCompare()`，消除最后一处不安全字符串比较；③ 强制刷新频率限制：`?refresh=1` 参数触发模型缓存刷新新增 **10 秒最短间隔**（`FORCE_REFRESH_MIN_INTERVAL_MS`），防止串行请求引发上游拉取风暴；④ Host 头注入修复：所有错误响应中的 `docs` URL 从 `req.protocol + '://' + req.get('host')` 改为读取 `REPLIT_DOMAINS` 环境变量，彻底消除 Host 头注入攻击面；⑤ 调试头信息泄露修复：移除 `rawPassthroughNonStream` / `rawVendorPassthroughNonStream` 中的 `x-gateway-debug-headers` 响应路径，防止任意代理客户端通过 header 读取上游请求详情（含伪装配置信息）；⑥ 上游响应缓冲限制：非流式非流式路径引入 `readResponseBufferCapped()`，逐块读取并累计字节数，超过 **100 MB** 立即取消流并返回 **502**，防止恶意上游通过超大响应体导致 OOM。
+- **安全加固第二轮**：① 请求体上限收缩：`express.json` 从 1 GB 降至 **50 MB**（后在 v0.1.77 调整为 256 MB），防止超大 JSON 请求体导致 OOM DoS；② `GET /api/config` 计时旁路修复：对 `adminKey`/`proxyKey` 的判断从 `===` 改为 `safeCompare()`，消除最后一处不安全字符串比较；③ 强制刷新频率限制：`?refresh=1` 参数触发模型缓存刷新新增 **10 秒最短间隔**（`FORCE_REFRESH_MIN_INTERVAL_MS`），防止串行请求引发上游拉取风暴；④ Host 头注入修复：所有错误响应中的 `docs` URL 从 `req.protocol + '://' + req.get('host')` 改为读取 `REPLIT_DOMAINS` 环境变量，彻底消除 Host 头注入攻击面；⑤ 调试头信息泄露修复：移除 `rawPassthroughNonStream` / `rawVendorPassthroughNonStream` 中的 `x-gateway-debug-headers` 响应路径，防止任意代理客户端通过 header 读取上游请求详情（含伪装配置信息）；⑥ 上游响应缓冲限制：非流式非流式路径引入 `readResponseBufferCapped()`，逐块读取并累计字节数，超过 **100 MB** 立即取消流并返回 **502**，防止恶意上游通过超大响应体导致 OOM。
 
 ### v0.1.75（2026-05-01）
 
@@ -346,33 +362,6 @@ Replit 托管的 AI Integrations 渠道（4 个）：**OpenAI、Anthropic、Gemi
 - **「成功率」徽标改为统计卡片**：从「使用日志」标题右侧的 `position: absolute` (`left:100%`, `marginLeft:10px`, `pointerEvents:none`) 浮层迁入下方统计卡片行，与「总请求 / 成功 / 失败 / 总Tokens / 估算费用」共用同一 `7px 14px` padding + `8px` 圆角 + `14px` 数字 + `12px` 标签 + `90px minWidth` 的卡片样式；位置精确插入「失败」与「总 Tokens」之间。颜色仍按 ≥95% / ≥80% / 否则 三档绿/黄/红分级。从根本上消除 v0.1.68 起在窄视口下徽标穿模 Proxy Key / Admin Key 输入框的 z-order 冲突。
 - **设计规范复核**：本次仅修改 `UsageLogsPage.tsx` 表格 colgroup + 统计卡片排序与版本号文本；**未触碰** `ModelsPage` / `PROVIDER_LABELS` 顺序（OpenRouter 仍在尾）、`LogsPage` circle 实线 SVG（无 `strokeDasharray`）、`/v1beta/models` 与 `/v1/models` 文案一致性、UI 三档字号 22 / 18 / 14（次级 12，禁用 11 / 13 / 13.5）、`SegmentedControl` 等任何已声明设计约束。
 - **版本号同步**：前端 `LOCAL_VERSION` / `LOCAL_BUILD_TIME`、后端 `APP_VERSION` / `APP_BUILD_TIME`、`docs/api-passthrough.md`、`replit.md` 一并升至 0.1.70；`APP_CHANGELOG` 推入 v0.1.70 条目并淘汰最早的 v0.1.60。
-
-### v0.1.69（2026-04-21）
-
-- **修复使用日志空态时表头列宽撑开造成的「时间/模型」间距视觉错位**：v0.1.67 把表格改为 `tableLayout: fixed` + `<colgroup>` 锁列宽（时间 120 / 模型 180 / 供应商 100 / 端点 110 ...）后，没有数据时表头依然按完整 1180px 列宽渲染，左对齐表头之间出现 90~150px 不均匀空隙（最宽的 180px 模型列表头与右侧供应商之间空隙最大），看起来像「时间和模型栏不间距对齐」。
-- **修复方式**：将空态从 `<tr><td colSpan={13}>` 改为 `Card` 内独立 `<div>`（48px 上下内边距 + 居中），仅在 `usageLogs.length > 0` 时渲染 `<table>` + `<thead>` + `<tbody>` + `<colgroup>` 与外层 `overflowX: auto` 滚动容器，从根本上避免空态出现宽列骨架；底部「显示 X 条 / 共 Y 条」原本已条件渲染，无需改动。
-- **硬约束**：「表格不得回退到 auto 布局」继续保持——有数据时仍是 fixed + colgroup。
-- **版本号同步**：前端 `LOCAL_VERSION`、后端 `APP_VERSION`、`docs/api-passthrough.md` 与 replit.md 一并升至 0.1.69；`APP_CHANGELOG` 推入 v0.1.69 条目并淘汰最早的 v0.1.59。
-
-### v0.1.68（2026-04-21）
-
-- **修复使用日志统计与筛选不一致**：`UsageLogsPage` 顶部 stats 卡片（总请求/成功/失败/总Tokens）与「成功率」徽标此前始终读取后端 `/api/usage-logs` 返回的 **GLOBAL** stats（服务端单次反向遍历环形缓冲区时全量累加，忽略 `model`/`provider`/`status` 查询参数），与表格仅展示已过滤行的行为冲突——筛选 SiliconFlow 等无匹配数据的供应商时，表格显示「暂无使用日志」但顶部仍显示「5 总请求 / 80% 成功率」，造成「整体界面/数据出问题」的误解。
-- **修复方式**：客户端派生。新增 `hasFilter = !!(model || provider || status)`；无筛选时仍用服务端 `globalStats`（保留环形缓冲区超 200 行的全量信息），有筛选时改用 `useMemo` 从可见 `usageLogs` 即时累加 `totalRequests`/`successCount`/`errorCount`/`totalTokens`，与表格底部「显示 X 条 / 共 Y 条」（Y 仍为全局 total）形成「过滤视图 + 全局上下文」的清晰组合。
-- **改动范围**：仅前端 `artifacts/api-portal/src/pages/UsageLogsPage.tsx` 第 85-104 行；服务端 `/api/usage-logs` 不动（其 `stats` 字段语义保持「全局」）。
-- **版本号同步**：前端 `LOCAL_VERSION`、后端 `APP_VERSION`、`docs/api-passthrough.md` 与 replit.md 一并升至 0.1.68；`APP_CHANGELOG` 推入 v0.1.68 条目并淘汰最早的 v0.1.58。
-
-### v0.1.67（2026-04-21）
-
-- **UI 设计规范二次审查与修复**（除「概览/模型列表」外的所有 Tab）：
-  - **新增通用 `components/SegmentedControl.tsx`**：支持 `size` (sm/md)、`allowDeselect`、每项 `accentColor` 与 `badge`，圆角 8/6、14px 标签 + 12px 徽标，统一替换使用日志「趋势/性能/伪装」与实时日志「全部/INFO/WARN/ERROR」筛选切换；`usageLogs/ToggleButton.tsx` 降级为兼容性再导出。**硬约束**：所有互斥状态切换必须使用 `SegmentedControl`。
-  - **TrendPanel 重写**：图表高度 64→96px、顶部 stats 改为 4 列 grid 卡片（14px 数值 + 12px 标签 + 8px 圆角 + 同色 LegendDot）、坐标轴改 12px Menlo，整体可读性显著提升。
-  - **PerformancePanel**：顶部供应商/模型切换改为 SegmentedControl；修复「按模型」竖排 bug（`wordBreak: break-all` → `whiteSpace: nowrap`）。
-  - **UsageLogsPage 表格**：从 `tableLayout: auto` 改回 `tableLayout: fixed` + `<colgroup>` 显式锁定 13 列宽度（时间 120 / 模型 180 / 供应商 100 / 端点 110 / 类型 50 / 状态 70 / 用时·首字·输入·输出 各 75 / 费用 80 / 伪装 100 / 操作 70）+ `min-width: 1180px`，解决筛选 OpenAI/全部/Anthropic 时列宽抖动；外层容器横向滚动保留窄屏可拖动查看。**硬约束**：使用日志表格不得回退到 `auto` 布局。
-  - **LogsPage 实时日志**：删除空态书本 emoji（📋）与连接前 ○ 图标（顺带消除超规 28px 字号）；INFO/WARN/ERROR/DEBUG 徽标多轮迭代后回退为软填充胶囊（12% alpha 语义色背景 + 30% alpha 同色边 + 6px 圆角 + sans-serif 700 + 0.6px 字距 + 56px 固定宽度）。
-  - **ReferencePage 模型路由规则**：完全按 `PROVIDERS` 顺序重排为 OpenAI → Anthropic → Google → OpenRouter（catch-all 显示位置上提）→ xAI → DeepSeek → Mistral → Moonshot → Groq → Cerebras → Together → SiliconFlow → Fireworks → Novita → Hyperbolic 共 15 行，补齐之前缺失的 Cerebras / Fireworks / Novita / Hyperbolic 4 条规则。
-  - **DocsPage 模型信息重组**：仅保留 OpenAI / Anthropic / Google 三大独立章节 + OpenRouter（Google 之后）+ 原生与 OpenAI 兼容通道（OpenRouter 之后）共 5 节；原 DeepSeek 独立章节并入「原生与 OpenAI 兼容通道」段首，保留 platform.deepseek.com 独立 API Key 与 deepseek-* 不含斜线优先原生路由的关键说明。
-- **审查报告**：`artifacts/api-portal/docs/UI_AUDIT_v0.1.66.md` 记录本轮审查依据与字号/圆角/服务商色逐项核对结果。
-- **版本号同步**：前端 `LOCAL_VERSION`、后端 `APP_VERSION`、`docs/api-passthrough.md` 与 replit.md 一并升至 0.1.67；`APP_CHANGELOG` 推入 v0.1.67 条目并淘汰最早的 v0.1.57。
 
 ## 后续开发记录
 

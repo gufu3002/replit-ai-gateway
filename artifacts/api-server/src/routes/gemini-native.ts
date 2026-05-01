@@ -40,6 +40,7 @@ import {
   getProviderCredentials,
   fetchOpenAICompatibleRaw,
   parseOpenAISSE,
+  readResponseTextCapped,
 } from "./proxy-raw";
 
 // ---------------------------------------------------------------------------
@@ -282,7 +283,7 @@ router.use("/models", authMiddleware, async (req: Request, res: Response) => {
           stream: true,
         }, "anthropic", req.originalUrl);
         if (!upstream.ok) {
-          const err = new Error(await upstream.text()) as Error & { status?: number };
+          const err = new Error(await readResponseTextCapped(upstream)) as Error & { status?: number };
           err.status = upstream.status;
           throw err;
         }
@@ -317,7 +318,7 @@ router.use("/models", authMiddleware, async (req: Request, res: Response) => {
           stream: true,
         }, provider, req.originalUrl);
         if (!upstream.ok) {
-          const err = new Error(await upstream.text()) as Error & { status?: number };
+          const err = new Error(await readResponseTextCapped(upstream)) as Error & { status?: number };
           err.status = upstream.status;
           throw err;
         }
@@ -379,7 +380,7 @@ router.use("/models", authMiddleware, async (req: Request, res: Response) => {
           messages: chatMessages,
           stream: false,
         }, "anthropic", req.originalUrl);
-        const responseTextRaw = await upstream.text();
+        const responseTextRaw = await readResponseTextCapped(upstream);
         if (!upstream.ok) {
           const err = new Error(responseTextRaw) as Error & { status?: number };
           err.status = upstream.status;
@@ -408,7 +409,7 @@ router.use("/models", authMiddleware, async (req: Request, res: Response) => {
           max_tokens: maxTokens,
           stream: false,
         }, provider, req.originalUrl);
-        const responseTextRaw = await upstream.text();
+        const responseTextRaw = await readResponseTextCapped(upstream);
         if (!upstream.ok) {
           const err = new Error(responseTextRaw) as Error & { status?: number };
           err.status = upstream.status;

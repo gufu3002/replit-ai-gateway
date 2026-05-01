@@ -18,6 +18,7 @@ import {
   getGeminiCredentials,
   fetchGeminiRaw,
   parseGeminiSSE,
+  readResponseTextCapped,
 } from "./proxy-raw";
 
 /**
@@ -105,7 +106,7 @@ export async function handleGeminiStream(
   );
 
   if (!upstream.ok) {
-    const errText = await upstream.text();
+    const errText = await readResponseTextCapped(upstream);
     const err = new Error(errText) as Error & { status?: number };
     err.status = upstream.status;
     throw err;
@@ -257,8 +258,7 @@ export async function handleGeminiNonStream(
     "generateContent",
     geminiBody,
   );
-  const responseBuffer = await upstream.arrayBuffer();
-  const responseText = new TextDecoder().decode(responseBuffer);
+  const responseText = await readResponseTextCapped(upstream);
 
   if (!upstream.ok) {
     const err = new Error(responseText) as Error & { status?: number };

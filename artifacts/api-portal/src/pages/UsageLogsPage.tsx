@@ -508,9 +508,9 @@ export default function UsageLogsPage({
         .usage-row:hover td { background: rgba(255,255,255,0.018) !important; }
         .usage-row td { transition: background 0.1s; vertical-align: middle; }
         .usage-row.highlighted td { animation: highlightFade 4s ease forwards; }
-        .usage-row-menu-item { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 7px 12px; color: #cbd5e1; font-size: 13px; cursor: pointer; border-radius: 4px; font-family: inherit; }
+        .usage-row-menu-item { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 7px 12px; color: #cbd5e1; font-size: 14px; cursor: pointer; border-radius: 4px; font-family: inherit; }
         .usage-row-menu-item:hover { background: rgba(99,102,241,0.18); color: #e2e8f0; }
-        .usage-row-menu-item .usage-row-menu-shortcut { float: right; color: #475569; font-family: Menlo, monospace; font-size: 11px; margin-left: 16px; }
+        .usage-row-menu-item .usage-row-menu-shortcut { float: right; color: #475569; font-family: Menlo, monospace; font-size: 12px; margin-left: 16px; }
       `}</style>
 
       <Card style={{ marginBottom: "16px" }}>

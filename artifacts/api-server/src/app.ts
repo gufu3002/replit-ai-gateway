@@ -51,7 +51,7 @@ const adminRateLimit = rateLimit({
       code: "rate_limit_exceeded",
     },
   },
-  skip: (_req) => !getConfig().proxyApiKey && !getConfig().adminKey,
+  skip: (_req) => { const c = getConfig(); return !c.proxyApiKey && !c.adminKey; },
 });
 
 // AI proxy endpoints: generous limit to allow normal usage but block abuse
@@ -122,13 +122,13 @@ app.use(
 app.use(cors());
 app.use(
   express.json({
-    limit: "64mb",
+    limit: "256mb",
     verify: (req, _res, buf) => {
       (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
     },
   }),
 );
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "256mb" }));
 
 function urlCorrectionMiddleware(
   req: Request,
@@ -386,7 +386,7 @@ app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
   ) {
     res.status(413).json({
       error: {
-        message: "请求体过大。请求体大小上限为 1 GB，请减小请求内容后重试。",
+        message: "请求体过大。请求体大小上限为 256 MB，请减小请求内容后重试。",
         type: "invalid_request_error",
         code: "request_too_large",
       },
